@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class LambdaConv(nn.Module):
-    def __init__(self, in_channels, out_channels, heads=4, k=16, u=1, m=23):
+    def __init__(self, in_channels, out_channels, heads=4, k=16, u=4, m=7):
         super(LambdaConv, self).__init__()
         self.kk, self.uu, self.vv, self.mm, self.heads = k, u, out_channels // heads, m, heads
         self.local_context = True if m > 0 else False
@@ -40,7 +40,7 @@ class LambdaConv(nn.Module):
         y_c = torch.einsum('bhkn,bkv->bhvn', queries, lambda_c)
 
         if self.local_context:
-            values = values.view(n_batch, self.uu, -1, w, h)
+            values = values.transpose(1, 2).view(n_batch, self.uu, self.vv, w, h)
             lambda_p = F.conv3d(values, self.embedding, padding=(0, self.padding, self.padding))
             lambda_p = lambda_p.view(n_batch, self.kk, self.vv, w * h)
             y_p = torch.einsum('bhkn,bkvn->bhvn', queries, lambda_p)
@@ -95,7 +95,7 @@ class Bottleneck(nn.Module):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, self.expansion * planes, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(self.expansion * planes)
@@ -103,7 +103,7 @@ class Bottleneck(nn.Module):
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1),
+                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion*planes)
             )
 
@@ -119,14 +119,15 @@ class Bottleneck(nn.Module):
 # reference
 # https://github.com/kuangliu/pytorch-cifar/blob/master/models/resnet.py
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=1000):
+    def __init__(self, block, num_blocks, num_classes=10):
         super(ResNet, self).__init__()
         self.in_planes = 64
 
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        # self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # ImageNet 350 epochs training setup
         # self.maxpool = nn.Sequential(
@@ -142,7 +143,7 @@ class ResNet(nn.Module):
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Sequential(
-            nn.Dropout(0.3), # All architecture deeper than ResNet-200 dropout_rate: 0.2
+            # nn.Dropout(0.3), # All architecture deeper than ResNet-200 dropout_rate: 0.2
             nn.Linear(512 * block.expansion, num_classes)
         )
 
@@ -156,7 +157,7 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         out = self.relu(self.bn1(self.conv1(x)))
-        out = self.maxpool(out)
+        # out = self.maxpool(out)
 
         out = self.layer1(out)
         out = self.layer2(out)

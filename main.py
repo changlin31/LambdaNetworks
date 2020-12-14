@@ -1,3 +1,5 @@
+import time
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,6 +32,8 @@ def _train(epoch, train_loader, model, optimizer, criterion, args):
     losses = 0.
     acc = 0.
     total = 0.
+    tic = time.time()
+    total_steps = len(train_loader)
     for idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -47,11 +51,12 @@ def _train(epoch, train_loader, model, optimizer, criterion, args):
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_clip)
         optimizer.step()
 
-        if idx % args.print_intervals == 0 and idx != 0:
-            print('[Epoch: {0:4d}], Loss: {1:.3f}, Acc: {2:.3f}, Correct {3} / Total {4}'.format(epoch,
+        if (idx % args.print_intervals == 0 or idx == total_steps-1) and idx != 0:
+            total_time = time.time() - tic
+            print('[Epoch: {0:4d}], Loss: {1:.3f}, Acc: {2:.3f}, Correct {3} / Total {4}, Batch time {5:.3f}'.format(epoch,
                                                                                                  losses / (idx + 1),
                                                                                                  acc / total * 100.,
-                                                                                                 acc, total))
+                                                                                                 acc, total, total_time / (idx + 1)))
 
 
 def _eval(epoch, test_loader, model, args):
@@ -94,7 +99,8 @@ def main(args):
 
     if not args.evaluation:
         criterion = nn.CrossEntropyLoss()
-        lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=0.0001)
+        # lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=0.0001)
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
         global_acc = 0.
         for epoch in range(start_epoch, args.epochs + 1):
@@ -105,7 +111,7 @@ def main(args):
                 save_checkpoint(best_acc, model, optimizer, args, epoch)
 
             lr_scheduler.step()
-            print('Current Learning Rate: {}'.format(lr_scheduler.get_last_lr()))
+            print('Current Learning Rate: {}'.format(lr_scheduler.get_lr()[0]))
     else:
         _eval(start_epoch, test_loader, model, args)
 
